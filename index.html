@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Émulateur Game Boy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#e8e4da;
+  --ink:#23221e;
+  --muted:#6d6a61;
+  --shell:#cfcabd;
+  --shell-hi:#e3dfd4;
+  --shell-lo:#a9a498;
+  --bezel:#4b4a50;
+  --bezel-lo:#2e2d33;
+  --lcd:#8ca316;
+  --btn:#9c2b63;
+  --btn-lo:#74204a;
+  --pill:#5a5a62;
+  --line:#bdb8ab;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --page:#191a1d; --ink:#eceae3; --muted:#95918a;
+    --shell:#45454c; --shell-hi:#56565e; --shell-lo:#2d2d33;
+    --bezel:#26262b; --bezel-lo:#151518; --line:#33333a;
+  }
+}
+:root[data-theme="dark"]{
+  --page:#191a1d; --ink:#eceae3; --muted:#95918a;
+  --shell:#45454c; --shell-hi:#56565e; --shell-lo:#2d2d33;
+  --bezel:#26262b; --bezel-lo:#151518; --line:#33333a;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--page);
+  color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px;line-height:1.5;
+  min-height:100dvh;
+  display:flex;flex-direction:column;align-items:center;
+  padding:12px 12px calc(20px + env(safe-area-inset-bottom));
+  touch-action:manipulation;
+  -webkit-user-select:none;user-select:none;
+}
+.wrap{width:100%;max-width:420px}
+h1{font-family:"Silkscreen",monospace;font-size:17px;font-weight:700;letter-spacing:.02em;margin:4px 0 2px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+
+.console{
+  background:linear-gradient(160deg,var(--shell-hi),var(--shell) 38%,var(--shell-lo));
+  border-radius:14px 14px 46px 14px;
+  padding:14px 14px 18px;
+  box-shadow:0 1px 0 rgba(255,255,255,.45) inset,0 -3px 0 rgba(0,0,0,.18) inset,0 10px 24px rgba(0,0,0,.22);
+}
+.bezel{
+  background:linear-gradient(170deg,var(--bezel),var(--bezel-lo));
+  border-radius:10px 10px 34px 10px;
+  padding:16px 18px 22px;
+  position:relative;
+}
+.screen{position:relative;background:#2a2f10;border-radius:3px;overflow:hidden}
+canvas{display:block;width:100%;height:auto;aspect-ratio:160/144;image-rendering:pixelated;image-rendering:crisp-edges}
+#overlay{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:8px;text-align:center;
+  font-family:"Silkscreen",monospace;font-size:11px;line-height:1.7;
+  color:#39461a;background:var(--lcd);padding:14px;
+}
+#overlay.hidden{display:none}
+.bezel .power{position:absolute;left:12px;top:50%;font-family:"Silkscreen",monospace;font-size:8px;color:#8f8ea0}
+.bezel .power::before{content:"";display:block;width:7px;height:7px;border-radius:50%;background:#6d2a2a;margin:0 auto 3px}
+.bezel.on .power::before{background:#e4553c;box-shadow:0 0 6px #e4553c}
+.brand{
+  font-family:"Silkscreen",monospace;font-size:13px;color:#3b3a44;
+  margin:10px 2px 0;display:flex;align-items:baseline;gap:6px;
+}
+.brand i{font-style:normal;font-size:8px;color:#6a6858;letter-spacing:.08em}
+
+.pad{display:flex;align-items:center;justify-content:space-between;margin-top:18px}
+.dpad{display:grid;grid-template-columns:repeat(3,40px);grid-template-rows:repeat(3,40px);touch-action:none}
+.dpad button{
+  border:0;margin:0;padding:0;background:#32323a;color:#b9b8c4;
+  font-size:11px;display:flex;align-items:center;justify-content:center;
+  touch-action:none;
+}
+.dpad button:active,.dpad button.down{background:#1d1d23}
+.dpad .u{grid-area:1/2;border-radius:6px 6px 0 0}
+.dpad .l{grid-area:2/1;border-radius:6px 0 0 6px}
+.dpad .cc{grid-area:2/2;background:#32323a}
+.dpad .r{grid-area:2/3;border-radius:0 6px 6px 0}
+.dpad .d{grid-area:3/2;border-radius:0 0 6px 6px}
+.ab{display:flex;gap:14px;transform:rotate(-22deg);padding-right:4px}
+.ab button{
+  width:54px;height:54px;border-radius:50%;border:0;margin:0;
+  background:linear-gradient(160deg,var(--btn),var(--btn-lo));
+  color:#f4dce9;font-family:"Silkscreen",monospace;font-size:15px;
+  box-shadow:0 3px 0 rgba(0,0,0,.3);touch-action:none;
+}
+.ab button:active,.ab button.down{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.3)}
+.se{display:flex;gap:22px;justify-content:center;margin-top:18px}
+.se button{
+  border:0;margin:0;padding:7px 16px;border-radius:20px;
+  background:var(--pill);color:#dcdce2;transform:rotate(-22deg);
+  font-family:"Silkscreen",monospace;font-size:9px;
+  box-shadow:0 2px 0 rgba(0,0,0,.28);touch-action:none;
+}
+.se button:active,.se button.down{transform:rotate(-22deg) translateY(2px);box-shadow:none}
+.speaker{display:flex;gap:6px;justify-content:flex-end;margin-top:14px;transform:rotate(-22deg);padding-right:8px}
+.speaker span{width:5px;height:34px;border-radius:3px;background:var(--shell-lo);box-shadow:0 1px 0 rgba(255,255,255,.4)}
+
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.bar button,.bar label{
+  flex:1 1 auto;border:1px solid var(--line);background:transparent;color:var(--ink);
+  border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;
+  text-align:center;cursor:pointer;
+}
+.bar label.primary{flex-basis:100%;background:var(--ink);color:var(--page);border-color:var(--ink);font-weight:600}
+.bar input[type=file]{display:none}
+.bar button:focus-visible,.bar label:focus-within{outline:2px solid var(--btn);outline-offset:2px}
+.note{color:var(--muted);font-size:12.5px;margin:14px 2px 0;-webkit-user-select:text;user-select:text}
+.note b{color:var(--ink);font-weight:600}
+#status{font-family:"Silkscreen",monospace;font-size:9px;color:var(--muted);margin:10px 2px 0;min-height:12px}
+@media (max-width:360px){
+  .dpad{grid-template-columns:repeat(3,34px);grid-template-rows:repeat(3,34px)}
+  .ab button{width:48px;height:48px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Émulateur Game Boy</h1>
+  <p class="sub">Chargez un fichier .gb depuis votre appareil. Tout se passe dans le navigateur, rien n'est envoyé sur un serveur.</p>
+
+  <div class="console">
+    <div class="bezel" id="bezel">
+      <div class="power">ON</div>
+      <div class="screen">
+        <canvas id="lcd" width="160" height="144"></canvas>
+        <div id="overlay">
+          <div>AUCUNE CARTOUCHE</div>
+          <div style="font-size:9px;color:#4d5b26">Touchez « Charger une ROM »<br>puis START</div>
+        </div>
+      </div>
+    </div>
+    <div class="brand">Nogent<i>POCKET SYSTEM</i></div>
+
+    <div class="pad">
+      <div class="dpad">
+        <button class="u" data-key="up" aria-label="Haut">▲</button>
+        <button class="l" data-key="left" aria-label="Gauche">◀</button>
+        <div class="cc"></div>
+        <button class="r" data-key="right" aria-label="Droite">▶</button>
+        <button class="d" data-key="down" aria-label="Bas">▼</button>
+      </div>
+      <div class="ab">
+        <button data-key="b">B</button>
+        <button data-key="a">A</button>
+      </div>
+    </div>
+
+    <div class="se">
+      <button data-key="select">SELECT</button>
+      <button data-key="start">START</button>
+    </div>
+    <div class="speaker"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+  </div>
+
+  <div class="bar">
+    <label class="primary" tabindex="0">Charger une ROM<input type="file" id="file"></label>
+    <button id="btnSound">Son : activé</button>
+    <button id="btnPal">Écran : vert</button>
+    <button id="btnReset">Réinitialiser</button>
+  </div>
+  <div id="status"></div>
+
+  <p class="note">
+    <b>Sur iPhone :</b> ouvrez la page dans Safari, puis « Partager → Sur l'écran d'accueil » pour l'avoir en plein écran comme une application.
+    Le son démarre à la première pression sur un bouton ; si vous n'entendez rien, vérifiez le petit interrupteur silencieux sur la tranche du téléphone.
+    Au clavier : flèches, X = A, Z = B, Entrée = Start, Maj = Select.
+  </p>
+  <p class="note">
+    <b>Pour charger un jeu sur iPhone :</b> touchez « Charger une ROM », puis « Choisir un fichier » pour ouvrir l'app Fichiers.
+    Si votre jeu est dans une archive .zip, touchez-la d'abord dans Fichiers pour l'extraire, puis sélectionnez le .gb qui en sort.
+  </p>
+  <p class="note">
+    Les sauvegardes des jeux (piles de cartouche) sont conservées dans ce navigateur. Modèle émulé : Game Boy monochrome — les jeux réservés à la Game Boy Color ne démarreront pas.
+  </p>
+</div>
+<script>
+'use strict';
+(function(){
+// ============================ ÉTAT GÉNÉRAL ============================
+const CPU_HZ = 4194304;
+const FRAME_CYCLES = 70224;
+
+let rom = new Uint8Array(0x8000);
+let mbc = 0, hasBattery = false;
+let eram = new Uint8Array(0x2000);
+let eramMask = 0x1FFF, eramSize = 0;
+let romLoaded = false, romKey = '';
+let ramDirty = false;
+
+const vram = new Uint8Array(0x2000);
+const wram = new Uint8Array(0x2000);
+const oam  = new Uint8Array(0xA0);
+const hram = new Uint8Array(0x7F);
+const io   = new Uint8Array(0x80);
+let ie = 0;
+
+let bankLo = 1, bankHi = 0, ramBank = 0, ramEnable = false, bankMode = 0;
+let off0 = 0, off1 = 0x4000, offRam = 0;
+
+// registres CPU : B C D E H L (HL) A  -> indices 0..7
+const reg = new Uint8Array(8);
+let fz=false, fn=false, fh=false, fc=false;
+let sp=0, pc=0;
+let ime=false, eiCount=0, halted=false, stopped=false;
+
+// timer
+let divCounter=0, timaCounter=0;
+const TIMER_PERIODS=[1024,16,64,256];
+
+// ============================ CARTOUCHE ============================
+function parseHeader(){
+  const type = rom[0x147];
+  hasBattery = false;
+  if(type === 0x00){ mbc = 0; }
+  else if(type <= 0x03){ mbc = 1; hasBattery = (type === 0x03); }
+  else if(type === 0x05 || type === 0x06){ mbc = 2; hasBattery = (type === 0x06); }
+  else if(type >= 0x0F && type <= 0x13){ mbc = 3; hasBattery = (type !== 0x11 && type !== 0x12); }
+  else if(type >= 0x19 && type <= 0x1E){ mbc = 5; hasBattery = (type === 0x1B || type === 0x1E); }
+  else { mbc = 1; hasBattery = true; }
+
+  const sizes = [0, 0x800, 0x2000, 0x8000, 0x20000, 0x10000];
+  eramSize = sizes[rom[0x149]] || 0;
+  if(mbc === 2) eramSize = 0x200;
+  if(eramSize === 0) eramSize = 0x2000; // filet de sécurité
+  eram = new Uint8Array(eramSize);
+  eramMask = eramSize - 1;
+
+  let title = '';
+  for(let i = 0x134; i < 0x143; i++){
+    const ch = rom[i];
+    if(ch >= 32 && ch < 127) title += String.fromCharCode(ch);
+  }
+  return title.trim() || 'SANS-TITRE';
+}
+
+function updateBanks(){
+  const nbBanks = Math.max(1, rom.length >> 14);
+  let b0 = 0, b1 = 1, rb = 0;
+  if(mbc === 1){
+    let lo = bankLo & 0x1F; if(lo === 0) lo = 1;
+    b1 = ((bankHi << 5) | lo);
+    b0 = bankMode ? (bankHi << 5) : 0;
+    rb = bankMode ? bankHi : 0;
+  } else if(mbc === 2){
+    b1 = bankLo & 0x0F; if(b1 === 0) b1 = 1;
+  } else if(mbc === 3){
+    b1 = bankLo & 0x7F; if(b1 === 0) b1 = 1;
+    rb = ramBank & 0x03;
+  } else if(mbc === 5){
+    b1 = ((bankHi & 1) << 8) | (bankLo & 0xFF);
+    rb = ramBank & 0x0F;
+  } else {
+    b1 = 1;
+  }
+  off0 = (b0 % nbBanks) << 14;
+  off1 = (b1 % nbBanks) << 14;
+  offRam = (rb << 13) & eramMask;
+}
+
+function mbcWrite(addr, v){
+  if(addr < 0x2000){
+    if(mbc === 2){
+      if(!(addr & 0x100)) ramEnable = (v & 0x0F) === 0x0A;
+      else { bankLo = v & 0x0F; updateBanks(); }
+      return;
+    }
+    ramEnable = (v & 0x0F) === 0x0A;
+  } else if(addr < 0x4000){
+    if(mbc === 2){
+      if(addr & 0x100){ bankLo = v & 0x0F; updateBanks(); }
+      return;
+    }
+    if(mbc === 5){
+      if(addr < 0x3000) bankLo = v & 0xFF; else bankHi = v & 1;
+    } else if(mbc === 3){ bankLo = v & 0x7F; }
+    else { bankLo = v & 0x1F; }
+    updateBanks();
+  } else if(addr < 0x6000){
+    if(mbc === 1){ bankHi = v & 3; }
+    else { ramBank = v & 0x0F; }
+    updateBanks();
+  } else {
+    if(mbc === 1){ bankMode = v & 1; updateBanks(); }
+  }
+}
+
+// ============================ MÉMOIRE ============================
+function rd(addr){
+  addr &= 0xFFFF;
+  switch(addr >> 12){
+    case 0: case 1: case 2: case 3: return rom[off0 + addr] | 0;
+    case 4: case 5: case 6: case 7: return rom[off1 + (addr & 0x3FFF)] | 0;
+    case 8: case 9: return vram[addr - 0x8000];
+    case 10: case 11:
+      if(!ramEnable) return 0xFF;
+      return mbc === 2 ? (eram[(addr - 0xA000) & eramMask] | 0xF0)
+                       : eram[(offRam + (addr - 0xA000)) & eramMask];
+    case 12: case 13: return wram[addr - 0xC000];
+    case 14: return wram[addr - 0xE000];
+    default:
+      if(addr < 0xFE00) return wram[(addr - 0xE000) & 0x1FFF];
+      if(addr < 0xFEA0) return oam[addr - 0xFE00];
+      if(addr < 0xFF00) return 0xFF;
+      if(addr < 0xFF80) return readIO(addr - 0xFF00);
+      if(addr < 0xFFFF) return hram[addr - 0xFF80];
+      return ie;
+  }
+}
+
+function wr(addr, v){
+  addr &= 0xFFFF; v &= 0xFF;
+  switch(addr >> 12){
+    case 0: case 1: case 2: case 3: case 4: case 5: case 6: case 7:
+      mbcWrite(addr, v); return;
+    case 8: case 9: vram[addr - 0x8000] = v; return;
+    case 10: case 11:
+      if(!ramEnable) return;
+      if(mbc === 2) eram[(addr - 0xA000) & eramMask] = v & 0x0F;
+      else eram[(offRam + (addr - 0xA000)) & eramMask] = v;
+      ramDirty = true; return;
+    case 12: case 13: wram[addr - 0xC000] = v; return;
+    case 14: wram[addr - 0xE000] = v; return;
+    default:
+      if(addr < 0xFE00){ wram[(addr - 0xE000) & 0x1FFF] = v; return; }
+      if(addr < 0xFEA0){ oam[addr - 0xFE00] = v; return; }
+      if(addr < 0xFF00) return;
+      if(addr < 0xFF80){ writeIO(addr - 0xFF00, v); return; }
+      if(addr < 0xFFFF){ hram[addr - 0xFF80] = v; return; }
+      ie = v; return;
+  }
+}
+
+function readIO(a){
+  switch(a){
+    case 0x00: {
+      const sel = io[0x00] & 0x30;
+      let low = 0x0F;
+      if(!(sel & 0x10)) low &= ~padDir & 0x0F;
+      if(!(sel & 0x20)) low &= ~padBtn & 0x0F;
+      return 0xC0 | sel | low;
+    }
+    case 0x04: return (divCounter >> 8) & 0xFF;
+    case 0x07: return io[0x07] | 0xF8;
+    case 0x0F: return io[0x0F] | 0xE0;
+    case 0x41: return (io[0x41] & 0x78) | (lycFlag ? 4 : 0) | ppuMode | 0x80;
+    case 0x44: return ly;
+    case 0x26: return apuStatus();
+    default:
+      if(a >= 0x10 && a <= 0x3F) return io[a] | APU_READ_MASK[a - 0x10];
+      if(a >= 0x4C) return 0xFF;
+      return io[a];
+  }
+}
+
+function writeIO(a, v){
+  switch(a){
+    case 0x00: io[0x00] = (io[0x00] & 0xCF) | (v & 0x30); return;
+    case 0x04: divCounter = 0; return;
+    case 0x05: io[0x05] = v; return;
+    case 0x07: io[0x07] = v & 0x07; return;
+    case 0x0F: io[0x0F] = v & 0x1F; return;
+    case 0x40: {
+      const was = io[0x40] & 0x80;
+      io[0x40] = v;
+      if(was && !(v & 0x80)){ ly = 0; ppuMode = 0; ppuDot = 0; winLine = 0; }
+      return;
+    }
+    case 0x41: io[0x41] = (v & 0x78) | (io[0x41] & 0x07); return;
+    case 0x44: return;
+    case 0x46: { // DMA OAM
+      const base = v << 8;
+      for(let i = 0; i < 0xA0; i++) oam[i] = rd(base + i);
+      io[0x46] = v; return;
+    }
+    default:
+      if(a >= 0x10 && a <= 0x3F){ apuWrite(a, v); return; }
+      io[a] = v;
+  }
+}
+
+// ============================ CPU ============================
+const CYCLES = [
+  4,12, 8, 8, 4, 4, 8, 4,20, 8, 8, 8, 4, 4, 8, 4,
+  4,12, 8, 8, 4, 4, 8, 4,12, 8, 8, 8, 4, 4, 8, 4,
+  8,12, 8, 8, 4, 4, 8, 4, 8, 8, 8, 8, 4, 4, 8, 4,
+  8,12, 8, 8,12,12,12, 4, 8, 8, 8, 8, 4, 4, 8, 4,
+  4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4,
+  4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4,
+  4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4,
+  8, 8, 8, 8, 8, 8, 4, 8, 4, 4, 4, 4, 4, 4, 8, 4,
+  4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4,
+  4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4,
+  4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4,
+  4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4,
+  8,12,12,16,12,16, 8,16, 8,16,12, 4,12,24, 8,16,
+  8,12,12, 4,12,16, 8,16, 8,16,12, 4,12, 4, 8,16,
+ 12,12, 8, 4, 4,16, 8,16,16, 4,16, 4, 4, 4, 8,16,
+ 12,12, 8, 4, 4,16, 8,16,12, 8,16, 4, 4, 4, 8,16
+];
+
+function hl(){ return (reg[4] << 8) | reg[5]; }
+function setHL(v){ reg[4] = (v >> 8) & 0xFF; reg[5] = v & 0xFF; }
+function bc(){ return (reg[0] << 8) | reg[1]; }
+function de(){ return (reg[2] << 8) | reg[3]; }
+function getF(){ return (fz?0x80:0) | (fn?0x40:0) | (fh?0x20:0) | (fc?0x10:0); }
+function setF(v){ fz=(v&0x80)!==0; fn=(v&0x40)!==0; fh=(v&0x20)!==0; fc=(v&0x10)!==0; }
+
+function rd8(i){ return i === 6 ? rd(hl()) : reg[i]; }
+function wr8(i, v){ if(i === 6) wr(hl(), v & 0xFF); else reg[i] = v & 0xFF; }
+
+function imm8(){ const v = rd(pc); pc = (pc + 1) & 0xFFFF; return v; }
+function imm8s(){ return (imm8() << 24) >> 24; }
+function imm16(){ const lo = imm8(), hi = imm8(); return (hi << 8) | lo; }
+function push(v){ sp = (sp - 1) & 0xFFFF; wr(sp, v >> 8); sp = (sp - 1) & 0xFFFF; wr(sp, v & 0xFF); }
+function pop(){ const lo = rd(sp); sp = (sp + 1) & 0xFFFF; const hi = rd(sp); sp = (sp + 1) & 0xFFFF; return (hi << 8) | lo; }
+
+function getRP(p){ return p === 0 ? bc() : p === 1 ? de() : p === 2 ? hl() : sp; }
+function setRP(p, v){
+  v &= 0xFFFF;
+  if(p === 0){ reg[0] = v >> 8; reg[1] = v & 0xFF; }
+  else if(p === 1){ reg[2] = v >> 8; reg[3] = v & 0xFF; }
+  else if(p === 2){ setHL(v); }
+  else sp = v;
+}
+function getRP2(p){ return p === 0 ? bc() : p === 1 ? de() : p === 2 ? hl() : ((reg[7] << 8) | getF()); }
+function setRP2(p, v){
+  v &= 0xFFFF;
+  if(p === 3){ reg[7] = v >> 8; setF(v & 0xF0); } else setRP(p, v);
+}
+function cond(i){ return i === 0 ? !fz : i === 1 ? fz : i === 2 ? !fc : fc; }
+
+function alu(op, v){
+  const a = reg[7];
+  switch(op){
+    case 0: { const r = a + v; fh = ((a & 15) + (v & 15)) > 15; fc = r > 255; reg[7] = r & 255; fz = reg[7] === 0; fn = false; break; }
+    case 1: { const cy = fc ? 1 : 0; const r = a + v + cy; fh = ((a & 15) + (v & 15) + cy) > 15; fc = r > 255; reg[7] = r & 255; fz = reg[7] === 0; fn = false; break; }
+    case 2: { const r = a - v; fh = ((a & 15) - (v & 15)) < 0; fc = r < 0; reg[7] = r & 255; fz = reg[7] === 0; fn = true; break; }
+    case 3: { const cy = fc ? 1 : 0; const r = a - v - cy; fh = ((a & 15) - (v & 15) - cy) < 0; fc = r < 0; reg[7] = r & 255; fz = reg[7] === 0; fn = true; break; }
+    case 4: reg[7] = a & v; fz = reg[7] === 0; fn = false; fh = true; fc = false; break;
+    case 5: reg[7] = a ^ v; fz = reg[7] === 0; fn = false; fh = false; fc = false; break;
+    case 6: reg[7] = a | v; fz = reg[7] === 0; fn = false; fh = false; fc = false; break;
+    case 7: { const r = a - v; fh = ((a & 15) - (v & 15)) < 0; fc = r < 0; fz = (r & 255) === 0; fn = true; break; }
+  }
+}
+
+function addHL(v){
+  const r = hl() + v;
+  fn = false; fh = ((hl() & 0xFFF) + (v & 0xFFF)) > 0xFFF; fc = r > 0xFFFF;
+  setHL(r & 0xFFFF);
+}
+
+function misc(y){
+  const a = reg[7];
+  switch(y){
+    case 0: reg[7] = ((a << 1) | (a >> 7)) & 255; fc = (a & 0x80) !== 0; fz = false; fn = false; fh = false; break;
+    case 1: reg[7] = ((a >> 1) | (a << 7)) & 255; fc = (a & 1) !== 0; fz = false; fn = false; fh = false; break;
+    case 2: reg[7] = ((a << 1) | (fc ? 1 : 0)) & 255; fc = (a & 0x80) !== 0; fz = false; fn = false; fh = false; break;
+    case 3: reg[7] = ((a >> 1) | (fc ? 0x80 : 0)) & 255; fc = (a & 1) !== 0; fz = false; fn = false; fh = false; break;
+    case 4: { // DAA
+      let v = a;
+      if(!fn){
+        if(fc || v > 0x99){ v += 0x60; fc = true; }
+        if(fh || (v & 15) > 9) v += 6;
+      } else {
+        if(fc) v -= 0x60;
+        if(fh) v -= 6;
+      }
+      reg[7] = v & 255; fz = reg[7] === 0; fh = false; break;
+    }
+    case 5: reg[7] = (~a) & 255; fn = true; fh = true; break;
+    case 6: fc = true; fn = false; fh = false; break;
+    case 7: fc = !fc; fn = false; fh = false; break;
+  }
+}
+
+function execCB(op){
+  const x = op >> 6, y = (op >> 3) & 7, z = op & 7;
+  if(x === 0){
+    const v = rd8(z); let r = 0;
+    switch(y){
+      case 0: r = ((v << 1) | (v >> 7)) & 255; fc = (v & 0x80) !== 0; break;
+      case 1: r = ((v >> 1) | (v << 7)) & 255; fc = (v & 1) !== 0; break;
+      case 2: r = ((v << 1) | (fc ? 1 : 0)) & 255; fc = (v & 0x80) !== 0; break;
+      case 3: r = ((v >> 1) | (fc ? 0x80 : 0)) & 255; fc = (v & 1) !== 0; break;
+      case 4: r = (v << 1) & 255; fc = (v & 0x80) !== 0; break;
+      case 5: r = ((v >> 1) | (v & 0x80)) & 255; fc = (v & 1) !== 0; break;
+      case 6: r = ((v >> 4) | (v << 4)) & 255; fc = false; break;
+      case 7: r = v >> 1; fc = (v & 1) !== 0; break;
+    }
+    wr8(z, r); fz = r === 0; fn = false; fh = false;
+  } else if(x === 1){
+    fz = (rd8(z) & (1 << y)) === 0; fn = false; fh = true;
+  } else if(x === 2){
+    wr8(z, rd8(z) & ~(1 << y));
+  } else {
+    wr8(z, rd8(z) | (1 << y));
+  }
+  return (z === 6) ? (x === 1 ? 12 : 16) : 8;
+}
+
+function exec(op){
+  const x = op >> 6, y = (op >> 3) & 7, z = op & 7, p = y >> 1, q = y & 1;
+  let extra = 0;
+  if(x === 0){
+    switch(z){
+      case 0:
+        if(y === 0){}
+        else if(y === 1){ const a = imm16(); wr(a, sp & 0xFF); wr((a + 1) & 0xFFFF, sp >> 8); }
+        else if(y === 2){ stopped = false; pc = (pc + 1) & 0xFFFF; }
+        else if(y === 3){ const d = imm8s(); pc = (pc + d) & 0xFFFF; }
+        else { const d = imm8s(); if(cond(y - 4)){ pc = (pc + d) & 0xFFFF; extra = 4; } }
+        break;
+      case 1:
+        if(q === 0) setRP(p, imm16()); else addHL(getRP(p));
+        break;
+      case 2: {
+        if(q === 0){
+          if(p === 0) wr(bc(), reg[7]);
+          else if(p === 1) wr(de(), reg[7]);
+          else if(p === 2){ const a = hl(); wr(a, reg[7]); setHL((a + 1) & 0xFFFF); }
+          else { const a = hl(); wr(a, reg[7]); setHL((a - 1) & 0xFFFF); }
+        } else {
+          if(p === 0) reg[7] = rd(bc());
+          else if(p === 1) reg[7] = rd(de());
+          else if(p === 2){ const a = hl(); reg[7] = rd(a); setHL((a + 1) & 0xFFFF); }
+          else { const a = hl(); reg[7] = rd(a); setHL((a - 1) & 0xFFFF); }
+        }
+        break;
+      }
+      case 3: setRP(p, (getRP(p) + (q ? -1 : 1)) & 0xFFFF); break;
+      case 4: { const v = rd8(y); const r = (v + 1) & 255; wr8(y, r); fz = r === 0; fn = false; fh = (v & 15) === 15; break; }
+      case 5: { const v = rd8(y); const r = (v - 1) & 255; wr8(y, r); fz = r === 0; fn = true; fh = (v & 15) === 0; break; }
+      case 6: wr8(y, imm8()); break;
+      case 7: misc(y); break;
+    }
+  } else if(x === 1){
+    if(y === 6 && z === 6) halted = true;
+    else wr8(y, rd8(z));
+  } else if(x === 2){
+    alu(y, rd8(z));
+  } else {
+    switch(z){
+      case 0:
+        if(y < 4){ if(cond(y)){ pc = pop(); extra = 12; } }
+        else if(y === 4) wr(0xFF00 + imm8(), reg[7]);
+        else if(y === 5){ const d = imm8s(); fz = false; fn = false; fh = ((sp & 15) + (d & 15)) > 15; fc = ((sp & 255) + (d & 255)) > 255; sp = (sp + d) & 0xFFFF; }
+        else if(y === 6) reg[7] = rd(0xFF00 + imm8());
+        else { const d = imm8s(); fz = false; fn = false; fh = ((sp & 15) + (d & 15)) > 15; fc = ((sp & 255) + (d & 255)) > 255; setHL((sp + d) & 0xFFFF); }
+        break;
+      case 1:
+        if(q === 0) setRP2(p, pop());
+        else {
+          if(p === 0) pc = pop();
+          else if(p === 1){ pc = pop(); ime = true; }
+          else if(p === 2) pc = hl();
+          else sp = hl();
+        }
+        break;
+      case 2:
+        if(y < 4){ const a = imm16(); if(cond(y)){ pc = a; extra = 4; } }
+        else if(y === 4) wr(0xFF00 + reg[1], reg[7]);
+        else if(y === 5) wr(imm16(), reg[7]);
+        else if(y === 6) reg[7] = rd(0xFF00 + reg[1]);
+        else reg[7] = rd(imm16());
+        break;
+      case 3:
+        if(y === 0) pc = imm16();
+        else if(y === 6){ ime = false; eiCount = 0; }
+        else if(y === 7){ eiCount = 2; }
+        break;
+      case 4: { if(y < 4){ const a = imm16(); if(cond(y)){ push(pc); pc = a; extra = 12; } } break; }
+      case 5:
+        if(q === 0) push(getRP2(p));
+        else if(p === 0){ const a = imm16(); push(pc); pc = a; }
+        break;
+      case 6: alu(y, imm8()); break;
+      case 7: push(pc); pc = y * 8; break;
+    }
+  }
+  return extra;
+}
+
+function cpuStep(){
+  const pending = io[0x0F] & ie & 0x1F;
+  if(pending && halted) halted = false;
+  if(ime && pending){
+    ime = false; eiCount = 0;
+    let b = 0; while(!((pending >> b) & 1)) b++;
+    io[0x0F] &= ~(1 << b);
+    push(pc);
+    pc = 0x40 + b * 8;
+    return 20;
+  }
+  if(halted) return 4;
+
+  const op = rd(pc); pc = (pc + 1) & 0xFFFF;
+  let cycles;
+  if(op === 0xCB){
+    const cb = rd(pc); pc = (pc + 1) & 0xFFFF;
+    cycles = execCB(cb);
+  } else {
+    cycles = CYCLES[op] + exec(op);
+  }
+  if(eiCount){ eiCount--; if(eiCount === 0) ime = true; }
+  return cycles;
+}
+
+function timerStep(t){
+  divCounter = (divCounter + t) & 0xFFFF;
+  if(io[0x07] & 4){
+    timaCounter += t;
+    const period = TIMER_PERIODS[io[0x07] & 3];
+    while(timaCounter >= period){
+      timaCounter -= period;
+      if(io[0x05] === 0xFF){ io[0x05] = io[0x06]; io[0x0F] |= 4; }
+      else io[0x05]++;
+    }
+  }
+}
+
+// ============================ PPU ============================
+const SCREEN_W = 160, SCREEN_H = 144;
+let ly = 0, ppuMode = 2, ppuDot = 0, winLine = 0, lycFlag = false;
+let frameReady = false;
+
+const canvas = document.getElementById('lcd');
+const ctx2d = canvas.getContext('2d', { alpha: false });
+const imgData = ctx2d.createImageData(SCREEN_W, SCREEN_H);
+const pix32 = new Uint32Array(imgData.data.buffer);
+const lineBg = new Uint8Array(SCREEN_W);     // index de couleur du fond (0..3)
+const lineSprite = new Uint8Array(SCREEN_W); // un sprite a-t-il déjà écrit ce pixel
+
+const PALETTES = {
+  vert:  [0xFF0FBC9B, 0xFF0FAC8B, 0xFF306230, 0xFF0F380F],
+  gris:  [0xFFE8E8E8, 0xFFA8A8A8, 0xFF585858, 0xFF181818],
+  ambre: [0xFF9BE0FF, 0xFF57A8E0, 0xFF2A5F96, 0xFF10243F]
+};
+let palName = 'vert';
+let shades = PALETTES.vert;
+
+function reqStat(){ io[0x0F] |= 2; }
+
+function checkLyc(){
+  lycFlag = (ly === io[0x45]);
+  if(lycFlag && (io[0x41] & 0x40)) reqStat();
+}
+
+function renderScanline(){
+  const lcdc = io[0x40];
+  const base = ly * SCREEN_W;
+
+  // --- fond et fenêtre ---
+  if(lcdc & 0x01){
+    const scx = io[0x43], scy = io[0x42];
+    const wy = io[0x4A], wx = io[0x4B] - 7;
+    const winActive = (lcdc & 0x20) && ly >= wy && wx < 160;
+    const bgMap = (lcdc & 0x08) ? 0x1C00 : 0x1800;
+    const winMap = (lcdc & 0x40) ? 0x1C00 : 0x1800;
+    const signed = !(lcdc & 0x10);
+    const bgp = io[0x47];
+    let usedWindow = false;
+
+    for(let x = 0; x < SCREEN_W; x++){
+      let mapBase, px, py;
+      if(winActive && x >= wx){
+        usedWindow = true;
+        mapBase = winMap;
+        px = x - wx;
+        py = winLine;
+      } else {
+        mapBase = bgMap;
+        px = (x + scx) & 255;
+        py = (ly + scy) & 255;
+      }
+      const tileIdx = vram[mapBase + ((py >> 3) << 5) + (px >> 3)];
+      let tileAddr;
+      if(signed) tileAddr = 0x1000 + (((tileIdx << 24) >> 24) << 4);
+      else tileAddr = tileIdx << 4;
+      const row = (py & 7) << 1;
+      const lo = vram[tileAddr + row];
+      const hi = vram[tileAddr + row + 1];
+      const bit = 7 - (px & 7);
+      const ci = ((lo >> bit) & 1) | (((hi >> bit) & 1) << 1);
+      lineBg[x] = ci;
+      pix32[base + x] = shades[(bgp >> (ci << 1)) & 3];
+    }
+    if(usedWindow) winLine++;
+  } else {
+    for(let x = 0; x < SCREEN_W; x++){ lineBg[x] = 0; pix32[base + x] = shades[0]; }
+  }
+
+  // --- sprites ---
+  if(lcdc & 0x02){
+    const big = (lcdc & 0x04) ? 16 : 8;
+    const found = [];
+    for(let i = 0; i < 40 && found.length < 10; i++){
+      const sy = oam[i * 4] - 16;
+      if(ly >= sy && ly < sy + big) found.push(i);
+    }
+    found.sort((a, b) => (oam[a * 4 + 1] - oam[b * 4 + 1]) || (a - b));
+    lineSprite.fill(0);
+    for(let k = 0; k < found.length; k++){
+      const i = found[k];
+      const sy = oam[i * 4] - 16;
+      const sx = oam[i * 4 + 1] - 8;
+      let tile = oam[i * 4 + 2];
+      const attr = oam[i * 4 + 3];
+      if(big === 16) tile &= 0xFE;
+      let row = ly - sy;
+      if(attr & 0x40) row = big - 1 - row;
+      const addr = (tile << 4) + (row << 1);
+      const lo = vram[addr], hi = vram[addr + 1];
+      const pal = (attr & 0x10) ? io[0x49] : io[0x48];
+      for(let px = 0; px < 8; px++){
+        const x = sx + px;
+        if(x < 0 || x >= SCREEN_W) continue;
+        if(lineSprite[x]) continue;
+        const bit = (attr & 0x20) ? px : 7 - px;
+        const ci = ((lo >> bit) & 1) | (((hi >> bit) & 1) << 1);
+        if(ci === 0) continue;
+        if((attr & 0x80) && lineBg[x] !== 0) continue;
+        lineSprite[x] = 1;
+        pix32[base + x] = shades[(pal >> (ci << 1)) & 3];
+      }
+    }
+  }
+}
+
+function ppuStep(t){
+  if(!(io[0x40] & 0x80)) return;
+  ppuDot += t;
+  if(ppuMode === 2){
+    if(ppuDot >= 80){ ppuDot -= 80; ppuMode = 3; }
+  } else if(ppuMode === 3){
+    if(ppuDot >= 172){
+      ppuDot -= 172; ppuMode = 0;
+      renderScanline();
+      if(io[0x41] & 0x08) reqStat();
+    }
+  } else if(ppuMode === 0){
+    if(ppuDot >= 204){
+      ppuDot -= 204; ly++;
+      checkLyc();
+      if(ly === 144){
+        ppuMode = 1;
+        io[0x0F] |= 1;
+        if(io[0x41] & 0x10) reqStat();
+        frameReady = true;
+      } else {
+        ppuMode = 2;
+        if(io[0x41] & 0x20) reqStat();
+      }
+    }
+  } else {
+    if(ppuDot >= 456){
+      ppuDot -= 456; ly++;
+      if(ly > 153){
+        ly = 0; winLine = 0; ppuMode = 2;
+        if(io[0x41] & 0x20) reqStat();
+      }
+      checkLyc();
+    }
+  }
+}
+
+function present(){
+  ctx2d.putImageData(imgData, 0, 0);
+}
+
+function clearScreen(){
+  pix32.fill(shades[0]);
+  present();
+}
+
+// ============================ MANETTE ============================
+let padDir = 0, padBtn = 0; // bit à 1 = touche enfoncée
+const KEYMAP = {
+  right: ['dir', 0], left: ['dir', 1], up: ['dir', 2], down: ['dir', 3],
+  a: ['btn', 0], b: ['btn', 1], select: ['btn', 2], start: ['btn', 3]
+};
+function setKey(name, down){
+  const m = KEYMAP[name];
+  if(!m) return;
+  const bit = 1 << m[1];
+  if(m[0] === 'dir'){
+    const before = padDir;
+    padDir = down ? (padDir | bit) : (padDir & ~bit);
+    if(down && !(before & bit)) io[0x0F] |= 16;
+  } else {
+    const before = padBtn;
+    padBtn = down ? (padBtn | bit) : (padBtn & ~bit);
+    if(down && !(before & bit)) io[0x0F] |= 16;
+  }
+}
+
+// ============================ SON (APU) ============================
+const APU_READ_MASK = new Uint8Array([
+  0x80,0x3F,0x00,0xFF,0xBF, 0xFF,0x3F,0x00,0xFF,0xBF,
+  0x7F,0xFF,0x9F,0xFF,0xBF, 0xFF,0xFF,0x00,0x00,0xBF,
+  0x00,0x00,0x70, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+]);
+const DUTY = [
+  [0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,1],
+  [1,0,0,0,0,1,1,1],
+  [0,1,1,1,1,1,1,0]
+];
+const NOISE_DIV = [8,16,32,48,64,80,96,112];
+
+function newSquare(){
+  return { on:false, dac:false, duty:0, pos:0, timer:1, freq:0,
+           len:0, lenEn:false, vol:0, envVol:0, envDir:1, envPer:0, envTimer:0,
+           swPer:0, swDir:0, swShift:0, swTimer:0, swOn:false, shadow:0 };
+}
+const ch1 = newSquare(), ch2 = newSquare();
+const ch3 = { on:false, dac:false, timer:1, freq:0, pos:0, len:0, lenEn:false, level:0, sample:0 };
+const ch4 = { on:false, dac:false, timer:1, lfsr:0x7FFF, width:false, len:0, lenEn:false,
+              vol:0, envVol:0, envDir:1, envPer:0, envTimer:0, divCode:0, shift:0 };
+
+let fsCounter = 0, fsStep = 0;
+let sampleAcc = 0, cyclesPerSample = CPU_HZ / 44100;
+let capL = 0, capR = 0;
+
+const RING_SIZE = 1 << 15;
+const ringL = new Float32Array(RING_SIZE);
+const ringR = new Float32Array(RING_SIZE);
+let ringW = 0, ringR_ = 0;
+function ringCount(){ return (ringW - ringR_ + RING_SIZE) % RING_SIZE; }
+
+function apuStatus(){
+  return 0x70 | ((io[0x26] & 0x80) ? 0x80 : 0) |
+    (ch1.on ? 1 : 0) | (ch2.on ? 2 : 0) | (ch3.on ? 4 : 0) | (ch4.on ? 8 : 0);
+}
+
+function triggerSquare(c){
+  c.on = c.dac;
+  if(c.len === 0) c.len = 64;
+  c.timer = (2048 - c.freq) * 4;
+  c.envTimer = c.envPer || 8;
+  c.vol = c.envVol;
+  c.shadow = c.freq;
+  c.swTimer = c.swPer || 8;
+  c.swOn = (c.swPer > 0 || c.swShift > 0);
+  if(c.swShift > 0) sweepCalc(c, true);
+}
+function sweepCalc(c, apply){
+  let nf = c.shadow >> c.swShift;
+  nf = c.swDir ? (c.shadow - nf) : (c.shadow + nf);
+  if(nf > 2047){ c.on = false; }
+  return nf;
+}
+
+function apuWrite(a, v){
+  if(!(io[0x26] & 0x80) && a !== 0x26 && a < 0x30) return; // APU éteint
+  io[a] = v;
+  switch(a){
+    case 0x10: ch1.swPer = (v >> 4) & 7; ch1.swDir = (v >> 3) & 1; ch1.swShift = v & 7; break;
+    case 0x11: ch1.duty = v >> 6; ch1.len = 64 - (v & 63); break;
+    case 0x12: ch1.envVol = v >> 4; ch1.envDir = (v & 8) ? 1 : -1; ch1.envPer = v & 7;
+               ch1.dac = (v & 0xF8) !== 0; if(!ch1.dac) ch1.on = false; break;
+    case 0x13: ch1.freq = (ch1.freq & 0x700) | v; break;
+    case 0x14: ch1.freq = (ch1.freq & 0xFF) | ((v & 7) << 8); ch1.lenEn = (v & 0x40) !== 0;
+               if(v & 0x80) triggerSquare(ch1); break;
+
+    case 0x16: ch2.duty = v >> 6; ch2.len = 64 - (v & 63); break;
+    case 0x17: ch2.envVol = v >> 4; ch2.envDir = (v & 8) ? 1 : -1; ch2.envPer = v & 7;
+               ch2.dac = (v & 0xF8) !== 0; if(!ch2.dac) ch2.on = false; break;
+    case 0x18: ch2.freq = (ch2.freq & 0x700) | v; break;
+    case 0x19: ch2.freq = (ch2.freq & 0xFF) | ((v & 7) << 8); ch2.lenEn = (v & 0x40) !== 0;
+               if(v & 0x80){ ch2.swOn = false; triggerSquare(ch2); } break;
+
+    case 0x1A: ch3.dac = (v & 0x80) !== 0; if(!ch3.dac) ch3.on = false; break;
+    case 0x1B: ch3.len = 256 - v; break;
+    case 0x1C: ch3.level = (v >> 5) & 3; break;
+    case 0x1D: ch3.freq = (ch3.freq & 0x700) | v; break;
+    case 0x1E: ch3.freq = (ch3.freq & 0xFF) | ((v & 7) << 8); ch3.lenEn = (v & 0x40) !== 0;
+               if(v & 0x80){ ch3.on = ch3.dac; if(ch3.len === 0) ch3.len = 256;
+                             ch3.timer = (2048 - ch3.freq) * 2; ch3.pos = 0; } break;
+
+    case 0x20: ch4.len = 64 - (v & 63); break;
+    case 0x21: ch4.envVol = v >> 4; ch4.envDir = (v & 8) ? 1 : -1; ch4.envPer = v & 7;
+               ch4.dac = (v & 0xF8) !== 0; if(!ch4.dac) ch4.on = false; break;
+    case 0x22: ch4.shift = v >> 4; ch4.width = (v & 8) !== 0; ch4.divCode = v & 7; break;
+    case 0x23: ch4.lenEn = (v & 0x40) !== 0;
+               if(v & 0x80){ ch4.on = ch4.dac; if(ch4.len === 0) ch4.len = 64;
+                             ch4.lfsr = 0x7FFF; ch4.vol = ch4.envVol; ch4.envTimer = ch4.envPer || 8;
+                             ch4.timer = Math.max(1, NOISE_DIV[ch4.divCode] << ch4.shift); } break;
+
+    case 0x26:
+      if(!(v & 0x80)){
+        for(let i = 0x10; i <= 0x25; i++) io[i] = 0;
+        ch1.on = ch2.on = ch3.on = ch4.on = false;
+      }
+      io[0x26] = v & 0x80;
+      break;
+  }
+}
+
+function lengthTick(){
+  const chans = [ch1, ch2, ch3, ch4];
+  for(let i = 0; i < 4; i++){
+    const c = chans[i];
+    if(c.lenEn && c.len > 0){ c.len--; if(c.len === 0) c.on = false; }
+  }
+}
+function envTick(c){
+  if(c.envPer === 0) return;
+  if(--c.envTimer <= 0){
+    c.envTimer = c.envPer;
+    const nv = c.vol + c.envDir;
+    if(nv >= 0 && nv <= 15) c.vol = nv;
+  }
+}
+function sweepTick(){
+  if(!ch1.swOn) return;
+  if(--ch1.swTimer <= 0){
+    ch1.swTimer = ch1.swPer || 8;
+    if(ch1.swPer !== 0){
+      const nf = sweepCalc(ch1, true);
+      if(nf <= 2047 && ch1.swShift > 0){
+        ch1.shadow = nf; ch1.freq = nf;
+        sweepCalc(ch1, false);
+      }
+    }
+  }
+}
+
+function outSquare(c){
+  if(!c.on || !c.dac) return 0;
+  return DUTY[c.duty][c.pos] ? c.vol : 0;
+}
+function outWave(){
+  if(!ch3.on || !ch3.dac || ch3.level === 0) return 0;
+  return ch3.sample >> (ch3.level - 1);
+}
+function outNoise(){
+  if(!ch4.on || !ch4.dac) return 0;
+  return (~ch4.lfsr & 1) ? ch4.vol : 0;
+}
+
+function apuStep(t){
+  // séquenceur de trames à 512 Hz
+  fsCounter += t;
+  while(fsCounter >= 8192){
+    fsCounter -= 8192;
+    fsStep = (fsStep + 1) & 7;
+    if((fsStep & 1) === 0) lengthTick();
+    if(fsStep === 7){ envTick(ch1); envTick(ch2); envTick(ch4); }
+    if(fsStep === 2 || fsStep === 6) sweepTick();
+  }
+
+  // horloges de canaux
+  ch1.timer -= t;
+  while(ch1.timer <= 0){ ch1.timer += (2048 - ch1.freq) * 4 || 4; ch1.pos = (ch1.pos + 1) & 7; }
+  ch2.timer -= t;
+  while(ch2.timer <= 0){ ch2.timer += (2048 - ch2.freq) * 4 || 4; ch2.pos = (ch2.pos + 1) & 7; }
+  ch3.timer -= t;
+  while(ch3.timer <= 0){
+    ch3.timer += (2048 - ch3.freq) * 2 || 2;
+    ch3.pos = (ch3.pos + 1) & 31;
+    const byte = io[0x30 + (ch3.pos >> 1)];
+    ch3.sample = (ch3.pos & 1) ? (byte & 15) : (byte >> 4);
+  }
+  ch4.timer -= t;
+  const nper = Math.max(1, NOISE_DIV[ch4.divCode] << ch4.shift);
+  while(ch4.timer <= 0){
+    ch4.timer += nper;
+    const b = (ch4.lfsr ^ (ch4.lfsr >> 1)) & 1;
+    ch4.lfsr = (ch4.lfsr >> 1) | (b << 14);
+    if(ch4.width) ch4.lfsr = (ch4.lfsr & ~0x40) | (b << 6);
+  }
+
+  // échantillonnage
+  sampleAcc += t;
+  while(sampleAcc >= cyclesPerSample){
+    sampleAcc -= cyclesPerSample;
+    let l = 0, r = 0;
+    if(io[0x26] & 0x80){
+      const o = [outSquare(ch1), outSquare(ch2), outWave(), outNoise()];
+      const nr51 = io[0x25];
+      for(let i = 0; i < 4; i++){
+        if(nr51 & (0x10 << i)) l += o[i];
+        if(nr51 & (1 << i)) r += o[i];
+      }
+      const nr50 = io[0x24];
+      l = (l / 60) * ((((nr50 >> 4) & 7) + 1) / 8);
+      r = (r / 60) * (((nr50 & 7) + 1) / 8);
+    }
+    // filtre passe-haut (comme le condensateur de sortie de la console)
+    const ol = l - capL; capL = l - ol * 0.996;
+    const or_ = r - capR; capR = r - or_ * 0.996;
+    if(ringCount() < RING_SIZE - 4){
+      ringL[ringW] = ol; ringR[ringW] = or_;
+      ringW = (ringW + 1) % RING_SIZE;
+    }
+  }
+}
+
+function apuReset(){
+  fsCounter = 0; fsStep = 0; sampleAcc = 0; capL = 0; capR = 0;
+  ringW = 0; ringR_ = 0;
+  [ch1, ch2].forEach(c => { c.on=false; c.dac=false; c.pos=0; c.timer=1; c.freq=0; c.vol=0;
+    c.len=0; c.lenEn=false; c.envPer=0; c.swOn=false; });
+  ch3.on=false; ch3.dac=false; ch3.pos=0; ch3.timer=1; ch3.freq=0; ch3.sample=0; ch3.len=0; ch3.lenEn=false;
+  ch4.on=false; ch4.dac=false; ch4.timer=1; ch4.lfsr=0x7FFF; ch4.vol=0; ch4.len=0; ch4.lenEn=false;
+  ch4.divCode=0; ch4.shift=0;
+}
+
+// ============================ DÉMARRAGE MACHINE ============================
+function reset(){
+  reg[0]=0x00; reg[1]=0x13; reg[2]=0x00; reg[3]=0xD8; reg[4]=0x01; reg[5]=0x4D; reg[6]=0; reg[7]=0x01;
+  setF(0xB0);
+  sp = 0xFFFE; pc = 0x0100;
+  ime = false; eiCount = 0; halted = false; stopped = false;
+  divCounter = 0; timaCounter = 0;
+  vram.fill(0); wram.fill(0); oam.fill(0); hram.fill(0); io.fill(0); ie = 0;
+  padDir = 0; padBtn = 0;
+
+  io[0x00]=0xCF; io[0x07]=0xF8; io[0x0F]=0xE1;
+  io[0x10]=0x80; io[0x11]=0xBF; io[0x12]=0xF3; io[0x14]=0xBF;
+  io[0x16]=0x3F; io[0x19]=0xBF;
+  io[0x1A]=0x7F; io[0x1B]=0xFF; io[0x1C]=0x9F; io[0x1E]=0xBF;
+  io[0x20]=0xFF; io[0x23]=0xBF;
+  io[0x24]=0x77; io[0x25]=0xF3; io[0x26]=0xF1;
+  io[0x40]=0x91; io[0x47]=0xFC; io[0x48]=0xFF; io[0x49]=0xFF;
+
+  bankLo = 1; bankHi = 0; ramBank = 0; ramEnable = false; bankMode = 0;
+  updateBanks();
+  ly = 0; ppuMode = 2; ppuDot = 0; winLine = 0; lycFlag = false; frameReady = false;
+  apuReset();
+  ch1.duty = 2; ch1.dac = true;
+  clearScreen();
+}
+
+function runCycles(total){
+  let done = 0;
+  while(done < total){
+    const t = cpuStep();
+    timerStep(t);
+    ppuStep(t);
+    if(audioReady) apuStep(t);
+    done += t;
+  }
+}
+
+// ============================ AUDIO ============================
+let audioCtx = null, audioNode = null, audioReady = false, soundOn = true;
+let lastL = 0, lastR = 0;
+
+function initAudio(){
+  if(audioCtx){
+    if(audioCtx.state !== 'running') audioCtx.resume();
+    return;
+  }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if(!AC) return;
+  try {
+    audioCtx = new AC();
+    cyclesPerSample = CPU_HZ / audioCtx.sampleRate;
+    audioNode = audioCtx.createScriptProcessor(2048, 0, 2);
+    audioNode.onaudioprocess = function(ev){
+      const outL = ev.outputBuffer.getChannelData(0);
+      const outR = ev.outputBuffer.getChannelData(1);
+      const n = outL.length;
+      for(let i = 0; i < n; i++){
+        if(ringR_ !== ringW){
+          lastL = ringL[ringR_]; lastR = ringR[ringR_];
+          ringR_ = (ringR_ + 1) % RING_SIZE;
+        } else {
+          lastL *= 0.98; lastR *= 0.98;
+        }
+        outL[i] = soundOn ? lastL : 0;
+        outR[i] = soundOn ? lastR : 0;
+      }
+    };
+    audioNode.connect(audioCtx.destination);
+    audioCtx.resume();
+    audioReady = true;
+  } catch(e){ audioReady = false; }
+}
+
+// ============================ SAUVEGARDES ============================
+function saveKey(){ return 'gbsave:' + romKey; }
+function saveRam(){
+  if(!hasBattery || !romLoaded) return;
+  try {
+    let s = '';
+    for(let i = 0; i < eram.length; i += 4096){
+      s += String.fromCharCode.apply(null, eram.subarray(i, Math.min(i + 4096, eram.length)));
+    }
+    localStorage.setItem(saveKey(), btoa(s));
+    ramDirty = false;
+  } catch(e){ /* stockage indisponible */ }
+}
+function loadRam(){
+  if(!hasBattery) return;
+  try {
+    const s = localStorage.getItem(saveKey());
+    if(!s) return;
+    const bin = atob(s);
+    const n = Math.min(bin.length, eram.length);
+    for(let i = 0; i < n; i++) eram[i] = bin.charCodeAt(i) & 0xFF;
+  } catch(e){ /* rien à restaurer */ }
+}
+setInterval(function(){ if(ramDirty) saveRam(); }, 2000);
+window.addEventListener('pagehide', saveRam);
+document.addEventListener('visibilitychange', function(){ if(document.hidden) saveRam(); });
+
+// ============================ BOUCLE PRINCIPALE ============================
+let running = false;
+function loop(){
+  requestAnimationFrame(loop);
+  if(!running || document.hidden) return;
+  let cycles = FRAME_CYCLES;
+  if(audioReady && audioCtx.state === 'running'){
+    const target = Math.floor(audioCtx.sampleRate * 0.09);
+    const deficit = target - ringCount();
+    if(deficit <= 0) return;
+    cycles = Math.min(Math.floor(deficit * cyclesPerSample), FRAME_CYCLES * 3);
+  }
+  try {
+    runCycles(cycles);
+  } catch(e){
+    running = false;
+    setStatus('Erreur d\u2019exécution : ' + e.message);
+    return;
+  }
+  if(frameReady){ frameReady = false; present(); }
+}
+requestAnimationFrame(loop);
+
+// ============================ INTERFACE ============================
+const overlay = document.getElementById('overlay');
+const bezel = document.getElementById('bezel');
+const statusEl = document.getElementById('status');
+function setStatus(t){ statusEl.textContent = t; }
+
+document.querySelectorAll('[data-key]').forEach(function(el){
+  const name = el.getAttribute('data-key');
+  const down = function(ev){ ev.preventDefault(); initAudio(); el.classList.add('down'); setKey(name, true); };
+  const up = function(ev){ ev.preventDefault(); el.classList.remove('down'); setKey(name, false); };
+  el.addEventListener('pointerdown', down);
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('pointerleave', up);
+  el.addEventListener('contextmenu', function(ev){ ev.preventDefault(); });
+});
+
+const KEYBOARD = {
+  ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right',
+  x:'a', X:'a', z:'b', Z:'b', Enter:'start', Shift:'select', Backspace:'select'
+};
+window.addEventListener('keydown', function(e){
+  const k = KEYBOARD[e.key];
+  if(k){ e.preventDefault(); initAudio(); setKey(k, true); }
+});
+window.addEventListener('keyup', function(e){
+  const k = KEYBOARD[e.key];
+  if(k){ e.preventDefault(); setKey(k, false); }
+});
+document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
+
+document.getElementById('file').addEventListener('change', function(e){
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  saveRam();
+  const reader = new FileReader();
+  reader.onload = function(){
+    const buf = new Uint8Array(reader.result);
+    if(buf.length < 0x150){ setStatus('Fichier trop petit pour être une ROM Game Boy.'); return; }
+    let size = 0x8000;
+    while(size < buf.length) size <<= 1;
+    rom = new Uint8Array(size);
+    rom.set(buf);
+    romLoaded = true;
+    const title = parseHeader();
+    romKey = title + '-' + buf.length;
+    loadRam();
+    reset();
+    running = true;
+    overlay.classList.add('hidden');
+    bezel.classList.add('on');
+    initAudio();
+    const gbcOnly = (buf[0x143] === 0xC0);
+    setStatus(title + (gbcOnly ? ' — jeu Game Boy Color : incompatible' : ' — en cours'));
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+document.getElementById('btnSound').addEventListener('click', function(){
+  initAudio();
+  soundOn = !soundOn;
+  this.textContent = 'Son : ' + (soundOn ? 'activé' : 'coupé');
+});
+
+const PAL_ORDER = ['vert', 'gris', 'ambre'];
+document.getElementById('btnPal').addEventListener('click', function(){
+  palName = PAL_ORDER[(PAL_ORDER.indexOf(palName) + 1) % PAL_ORDER.length];
+  shades = PALETTES[palName];
+  this.textContent = 'Écran : ' + palName;
+  if(!romLoaded) clearScreen();
+});
+
+document.getElementById('btnReset').addEventListener('click', function(){
+  if(!romLoaded){ setStatus('Chargez d\u2019abord une ROM.'); return; }
+  saveRam();
+  loadRam();
+  reset();
+  initAudio();
+  setStatus('Console réinitialisée.');
+});
+
+document.querySelector('.bar label.primary').addEventListener('keydown', function(e){
+  if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); document.getElementById('file').click(); }
+});
+
+clearScreen();
+})();
+</script>
+</body>
+</html>
